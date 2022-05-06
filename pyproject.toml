@@ -1,0 +1,47 @@
+[tool.poetry]
+name = "Machine-Learning-Engineering-Project-Template"
+version = "0.1.0"
+description = "REST Model Server"
+authors = ["Fernando Freire <fernando.scattone@alumni.usp.br>"]
+
+[tool.poetry.dependencies]
+python = "3.10.4"
+numpy = ">=1.19.4"
+mlflow = ">=1.25.1"
+pandas = ">=1.4.2"
+scikit-learn = ">=1.0.2"
+scipy = ">=1.8.0"
+lightgbm = ">=3.3.2"
+gensim = ">=4.1.2"
+nltk = ">=3.6.7"
+boto3 = ">=1.21"
+PyMySQL = ">=1.0.2"
+awswrangler = ">=2.15.1"
+fsspec = ">=2022.3.0" 
+s3fs = ">=2022.3.0"
+
+[tool.poetry.dev-dependencies]
+isort = "^5.10.1"
+black = "^22.3.0"
+autoflake = "^1.4"
+mypy = "^0.950"
+flake8 = "^4.0.1"
+pydantic = "^1.9.0"
+
+[tool.pytest.ini_options]
+asyncio_mode="auto"
+filterwarnings = ["ignore::DeprecationWarning:aioredis.*:"]
+
+[tool.isort]
+profile="black"
+known_first_party="mle"
+
+[tool.mypy]
+plugins = [
+  "pydantic.mypy"
+]
+ignore_missing_imports = true
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
