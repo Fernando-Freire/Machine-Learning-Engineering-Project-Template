@@ -2,7 +2,8 @@ version: "3.8"
 
 services:
   api:
-    build: .
+    build: 
+      context: 'api'
     env_file:
       - .env
     environment:
@@ -12,8 +13,9 @@ services:
     volumes:
       - ".:/usr/src/api"
 
-  etl:
-    build: .
+  train:
+    build:
+      context: 'train'
     env_file:
       - .env
     environment:
@@ -21,11 +23,150 @@ services:
       AWS_SESSION_TOKEN: '${AWS_SESSION_TOKEN}'
       AWS_SECRET_ACCESS_KEY: '${AWS_SECRET_ACCESS_KEY}'
     volumes:
-      - ".:/usr/src/etl"
+      - ".:/usr/src/train"
+
+  metrics:
+    build:
+      context: 'metrics'
+    env_file:
+      - .env
+    environment:
+      AWS_ACCESS_KEY_ID: '${AWS_ACCESS_KEY_ID}'
+      AWS_SESSION_TOKEN: '${AWS_SESSION_TOKEN}'
+      AWS_SECRET_ACCESS_KEY: '${AWS_SECRET_ACCESS_KEY}'
+    volumes:
+      - ".:/usr/src/metrics"
 
   redis:
     image: redis:6.2.6
     hostname: redis
+
+
+  minio:
+    restart: always
+    image: minio/minio:RELEASE.2022-07-04T21-02-54Z
+    container_name: mlflow_s3
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ':9001' --address ':9000'
+    environment:
+      - MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID}
+      - MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY}
+    volumes:
+      - minio_data:/data
+
+  mc:
+    image: minio/mc:RELEASE.2022-06-26T18-51-48Z
+    depends_on:
+      - minio
+    container_name: mc
+    env_file:
+      - .env
+    entrypoint: >
+      /bin/sh -c "
+      /tmp/mlflow/wait-for-it.sh minio:9000;
+      /usr/bin/mc alias set minio http://minio:9000 ${AWS_ACCESS_KEY_ID} ${AWS_SECRET_ACCESS_KEY};
+      /usr/bin/mc mb minio/mlflow;
+      mc mb minio/data;
+      mc cp data/sample_parquet.csv minio/data;
+      exit 0;
+      "
+    volumes:
+      - ./wait-for-it.sh:/tmp/wait-for-it.sh
+
+  db:
+    restart: always
+    image: mysql:8.0.29
+    container_name: mlflow_db
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - dbdata:/var/lib/mysql
+
+  mlflow:
+    restart: always
+    build: ./mlflow
+    image: mlflow_server
+    container_name: mlflow_server
+    ports:
+      - "5000:5000"
+    environment:
+      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    command: mlflow server --backend-store-uri mysql+pymysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE} --default-artifact-root s3://mlflow/ --host 0.0.0.0
+
+  zookeeper:
+    image: 'zookeeper:latest'
+    ports:
+      - '2181:2181'
+      - '3888:3888'
+      - '2888:2888'
+    environment:
+      - CONFIG_FILE=zoo.conf.development
+      - KAFKA_URL=kafka:9092
+      - SCHEMA_REGISTRY_URL=http://schema-registry:9090
+
+  kafka:
+    build:
+      context: 'resources/broker'
+      dockerfile: 'kafka.Dockerfile'
+    command: '/etc/kafka/server.properties'
+    ports:
+      - '9092:9092'
+    environment:
+      - CONFIG_FILE=zoo.conf.development
+      - KAFKA_URL=kafka:9092
+      - SCHEMA_REGISTRY_URL=http://schema-registry:9090
+    depends_on:
+      - 'zookeeper'
+
+  schema-registry:
+    build:
+      context: 'resources/broker'
+      dockerfile: 'schema-registry.Dockerfile'
+    ports:
+      - '9090:9090'
+      - '8081:8081'
+    environment:
+      - CONFIG_FILE=zoo.conf.development
+      - KAFKA_URL=kafka:9092
+      - SCHEMA_REGISTRY_URL=http://schema-registry:9090
+
+  prometheus:
+    image: "prom/prometheus:v2.35.0"
+    ports:
+      - "9094:9090"
+    command: --config.file=/etc/prometheus/prometheus.yaml
+    volumes:
+      - ./resources/prometheus.yaml:/etc/prometheus/prometheus.yaml
+
+  grafana:
+    image: "grafana/grafana:8.5.3"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./resources/grafana/provisioning/dashboards/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
+      - ./resources/grafana/provisioning/datasources/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - ./resources/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+    depends_on:
+      - prometheus
+
+
+volumes:
+  dbdata:
+  minio_data:
+  mlflow_recipes_data:
 
 networks:
   default:

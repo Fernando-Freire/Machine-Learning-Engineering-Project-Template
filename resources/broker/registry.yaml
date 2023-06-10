@@ -1,0 +1,51 @@
+# registries configuration
+modules:
+  - name: schema-registry
+    className: com.hortonworks.registries.schemaregistry.webservice.SchemaRegistryModule
+    config:
+      schemaProviders:
+        - providerClass: "com.hortonworks.registries.schemaregistry.avro.AvroSchemaProvider"
+          defaultSerializerClass: "com.hortonworks.registries.schemaregistry.serdes.avro.AvroSnapshotSerializer"
+          defaultDeserializerClass: "com.hortonworks.registries.schemaregistry.serdes.avro.AvroSnapshotDeserializer"
+      # schema cache properties
+      # inmemory schema versions cache size
+      schemaCacheSize: 10000
+      # inmemory schema version cache entry expiry interval after access
+      schemaCacheExpiryInterval: 3600
+      # Kafka config
+      kafka:
+        enabled: false
+        topic: "schema-registry.schema-changes.json"
+        bootstrap.servers: "kafka:9092"
+
+servletFilters:
+ - className: "com.hortonworks.registries.schemaregistry.webservice.RewriteUriFilter"
+   params:
+     forwardPaths: "/api/v1/confluent,/subjects/*,/schemas/ids/*"
+     redirectPaths: "/ui/,/"
+
+# Filesystem based jar storage
+fileStorageConfiguration:
+  className: "com.hortonworks.registries.common.util.LocalFileSystemStorage"
+  properties:
+    directory: "/tmp/schema-registry/jars"
+
+storageProviderConfiguration:
+  providerClass: "com.hortonworks.registries.storage.impl.memory.InMemoryStorageManager"
+#swagger configuration
+swagger:
+  resourcePackage: com.hortonworks.registries.schemaregistry.webservice
+
+#enable CORS, may want to disable in production
+enableCors: false
+
+server:
+  applicationConnectors:
+    - type: http
+      port: 9090
+
+# Logging settings.
+logging:
+  level: INFO
+  loggers:
+    com.hortonworks.registries: INFO
